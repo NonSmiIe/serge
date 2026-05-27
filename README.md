@@ -6,8 +6,6 @@ persona is **Serge**; you invoke it by mentioning `@askserge` in a PR comment.
 The web app mode adds **phased reviews** — you validate and edit the LLM's
 draft as a human before it's posted.
 
-**Source:** [github.com/huggingface/ai-reviewer](https://github.com/huggingface/ai-reviewer)
-
 It runs in three modes off the same codebase. Pick one:
 
 | Mode | Best for | Infra |
