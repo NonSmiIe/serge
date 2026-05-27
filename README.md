@@ -161,34 +161,3 @@ PR comment "@askserge …"  ──►  trigger gate  ──►  build review  �
 attempts ("ignore previous instructions", fake `SYSTEM` messages) are flagged
 inline rather than obeyed, and any repo-defined tools run in a read-only
 sandbox rooted at the checkout — no arbitrary shell access.
-
-### Code map
-
-```
-action.yml          Composite Action manifest (Mode 1)
-reviewbot/
-  action_runner.py  Action entry point (reads $GITHUB_EVENT_PATH)
-  app.py            Flask webhook server (Mode 2)
-  webapp.py         FastAPI review UI (Mode 3)
-  reviewer.py       Orchestration: build prompt, call LLM, validate comments
-  triggers.py       "Should we review this event?" gating
-  config.py         Env-driven configuration
-  llm_client.py     OpenAI-compatible chat-completions client (+ streaming)
-  github_auth.py    App JWT → installation token
-  github_client.py  GitHub REST wrapper (PRs, files, contents, reviews)
-  patch.py          Unified-diff parser + line annotator
-  prompts.py        System / user prompt templates
-  tools.py          Read-only browse tools + repo-defined helper CLIs
-  context_script.py Runs an optional repo-supplied context script
-  store.py          SQLite persistence for the web app (jobs, drafts, configs)
-tests/              unittest suite
-aws/                Single-VM EC2 bootstrap for the web app
-```
-
-## Limitations
-
-- **App mode has no queue or rate limiting** — one review per mention, run in
-  a thread. Fine for small teams; add RQ/Celery/SQS and a cooldown if needed.
-- **Single-shot review** by default; the model can browse the repo via tools
-  when a checkout is available, but there's no long agentic exploration loop.
-- **Binary and oversized diffs** (past `MAX_DIFF_CHARS`) are skipped.
