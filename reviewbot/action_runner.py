@@ -27,7 +27,9 @@ def main() -> int:
     event_name = os.environ.get("GITHUB_EVENT_NAME", "")
     event_path = os.environ.get("GITHUB_EVENT_PATH", "")
     if not event_name or not event_path or not os.path.exists(event_path):
-        log.error("GITHUB_EVENT_NAME/GITHUB_EVENT_PATH missing — not running in Actions?")
+        log.error(
+            "GITHUB_EVENT_NAME/GITHUB_EVENT_PATH missing — not running in Actions?"
+        )
         return 1
 
     with open(event_path, "r") as f:
@@ -35,7 +37,9 @@ def main() -> int:
 
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
-        log.error("GITHUB_TOKEN missing (forgot to pass it via env or inputs.github_token?)")
+        log.error(
+            "GITHUB_TOKEN missing (forgot to pass it via env or inputs.github_token?)"
+        )
         return 1
 
     cfg = Config.from_env(require_app=False)

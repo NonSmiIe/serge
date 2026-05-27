@@ -47,8 +47,18 @@ MAX_READ_LINES = 400
 # refs / object data; the rest are caches that bloat output without
 # adding signal.
 DENY_DIR_NAMES = frozenset(
-    {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache",
-     ".pytest_cache", ".ruff_cache", "dist", "build"}
+    {
+        ".git",
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "dist",
+        "build",
+    }
 )
 
 # Hosts the model is allowed to fetch via ``fetch_url``. Kept narrow on
@@ -255,9 +265,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
     },
 ]
 
-_BUILTIN_TOOL_NAMES = frozenset(
-    spec["function"]["name"] for spec in TOOL_SPECS
-)
+_BUILTIN_TOOL_NAMES = frozenset(spec["function"]["name"] for spec in TOOL_SPECS)
 
 
 @dataclass(frozen=True)
@@ -311,8 +319,10 @@ def load_repo_helper_tools(raw: str | None) -> list[RepoHelperTool]:
             raise ValueError(f"helper {name!r} is missing a non-empty description")
 
         command = item.get("command")
-        if not isinstance(command, list) or not command or not all(
-            isinstance(part, str) and part.strip() for part in command
+        if (
+            not isinstance(command, list)
+            or not command
+            or not all(isinstance(part, str) and part.strip() for part in command)
         ):
             raise ValueError(
                 f"helper {name!r} must declare a non-empty string array 'command'"
@@ -330,7 +340,9 @@ def load_repo_helper_tools(raw: str | None) -> list[RepoHelperTool]:
                 f"helper {name!r} max_args must be between 0 and {MAX_HELPER_ARGS}"
             )
         if not allow_args and max_args:
-            raise ValueError(f"helper {name!r} cannot set max_args when allow_args=false")
+            raise ValueError(
+                f"helper {name!r} cannot set max_args when allow_args=false"
+            )
 
         timeout_seconds = int(item.get("timeout_seconds", 20))
         if timeout_seconds < 1 or timeout_seconds > MAX_HELPER_TIMEOUT_SECONDS:
@@ -359,8 +371,10 @@ def load_repo_helper_tools(raw: str | None) -> list[RepoHelperTool]:
 def _parse_install_spec(name: str, raw: Any) -> tuple[str, ...]:
     if raw is None:
         return ()
-    if not isinstance(raw, list) or not raw or not all(
-        isinstance(part, str) and part.strip() for part in raw
+    if (
+        not isinstance(raw, list)
+        or not raw
+        or not all(isinstance(part, str) and part.strip() for part in raw)
     ):
         raise ValueError(
             f"helper {name!r} 'install' must be a non-empty array of non-empty strings"
@@ -641,7 +655,9 @@ def _read_file(env: ToolEnv, args: dict[str, Any]) -> str:
 def _list_dir(env: ToolEnv, args: dict[str, Any]) -> str:
     path = _resolve_path(env, args.get("path"), default=".")
     if not os.path.isdir(path):
-        raise _ToolError(f"not a directory: {os.path.relpath(path, env.repo_root) or '.'}")
+        raise _ToolError(
+            f"not a directory: {os.path.relpath(path, env.repo_root) or '.'}"
+        )
     rel = os.path.relpath(path, env.repo_root) or "."
     entries: list[str] = []
     try:
@@ -677,8 +693,16 @@ def _grep(env: ToolEnv, args: dict[str, Any]) -> str:
     max_results = int(args.get("max_results") or 50)
     max_results = max(1, min(max_results, 200))
     cmd = [
-        "git", "-C", env.repo_root, "grep", "-n", "-I", "-E",
-        "--max-count=10", "--", pattern,
+        "git",
+        "-C",
+        env.repo_root,
+        "grep",
+        "-n",
+        "-I",
+        "-E",
+        "--max-count=10",
+        "--",
+        pattern,
     ]
     if path_arg:
         cmd.append(rel_pathspec)
@@ -730,9 +754,7 @@ def _fetch_url(args: dict[str, Any]) -> str:
             headers={"User-Agent": "ai-reviewer/1.0 (link verification)"},
         )
     except requests.Timeout as exc:
-        raise _ToolError(
-            f"fetch timed out after {FETCH_TIMEOUT_SECONDS}s"
-        ) from exc
+        raise _ToolError(f"fetch timed out after {FETCH_TIMEOUT_SECONDS}s") from exc
     except requests.RequestException as exc:
         raise _ToolError(f"fetch failed: {exc}") from exc
 
@@ -764,9 +786,7 @@ def _resolve_helper_command(env: ToolEnv, raw: str) -> str:
     return path
 
 
-def _parse_helper_args(
-    helper: RepoHelperTool, args: dict[str, Any]
-) -> list[str]:
+def _parse_helper_args(helper: RepoHelperTool, args: dict[str, Any]) -> list[str]:
     extra = args.get("args")
     if extra is None:
         return []
@@ -792,15 +812,17 @@ def _parse_helper_args(
     return cleaned
 
 
-def _run_repo_helper(
-    env: ToolEnv, helper: RepoHelperTool, args: dict[str, Any]
-) -> str:
+def _run_repo_helper(env: ToolEnv, helper: RepoHelperTool, args: dict[str, Any]) -> str:
     cwd = _resolve_path(env, helper.cwd, default=".")
     if not os.path.isdir(cwd):
         raise _ToolError(f"helper cwd is not a directory: {helper.cwd!r}")
 
     extra_args = _parse_helper_args(helper, args)
-    command = [_resolve_helper_command(env, helper.command[0]), *helper.command[1:], *extra_args]
+    command = [
+        _resolve_helper_command(env, helper.command[0]),
+        *helper.command[1:],
+        *extra_args,
+    ]
     rel_cwd = os.path.relpath(cwd, env.repo_root) or "."
     try:
         proc = subprocess.run(

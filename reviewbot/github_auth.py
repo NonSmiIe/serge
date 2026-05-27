@@ -71,9 +71,7 @@ def installation_id_for_repo(
     return iid
 
 
-def user_is_org_member(
-    app_id: str, private_key: str, org: str, username: str
-) -> bool:
+def user_is_org_member(app_id: str, private_key: str, org: str, username: str) -> bool:
     """Return True if ``username`` belongs to ``org``.
 
     Order of checks:

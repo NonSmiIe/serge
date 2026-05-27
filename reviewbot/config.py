@@ -1,6 +1,7 @@
 import logging
 import os
 import stat
+import tempfile
 from dataclasses import dataclass
 from typing import Optional
 
@@ -99,6 +100,14 @@ class Config:
     # running jobs are never pruned.
     web_job_retention: int = 25
     web_dev_no_auth: bool = False
+    # Shared bare-clone + per-job worktree cache (see clone_cache.py).
+    # Default lives under the system temp dir so dev works out of the box;
+    # deploy points this at a dedicated EBS volume (e.g.
+    # /var/lib/reviewbot/clones). TTL is how long an untouched bare repo
+    # survives GC; depth is the shallow-fetch depth of the PR head.
+    web_clone_cache_dir: str = ""
+    web_clone_cache_ttl_seconds: int = 7 * 24 * 3600
+    web_clone_depth: int = 50
     # Drop the Secure flag from the session cookie so plain-HTTP works
     # (typical for VPN-private deployments without TLS termination).
     # Independent of DEV_NO_AUTH: you can have mandatory auth without
@@ -243,4 +252,10 @@ class Config:
             web_job_retention=_int_env("WEB_JOB_RETENTION", 25),
             web_dev_no_auth=dev_no_auth,
             web_insecure_cookies=_bool_env("WEB_INSECURE_COOKIES", False),
+            web_clone_cache_dir=(os.environ.get("WEB_CLONE_CACHE_DIR") or "").strip()
+            or os.path.join(tempfile.gettempdir(), "reviewbot-clones"),
+            web_clone_cache_ttl_seconds=_int_env(
+                "WEB_CLONE_CACHE_TTL_SECONDS", 7 * 24 * 3600
+            ),
+            web_clone_depth=_int_env("WEB_CLONE_DEPTH", 50),
         )

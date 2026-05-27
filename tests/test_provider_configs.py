@@ -14,6 +14,7 @@ class ProviderConfigsTests(unittest.TestCase):
 
     def _cleanup(self, tmp: str) -> None:
         import shutil
+
         shutil.rmtree(tmp, ignore_errors=True)
 
     def _insert(
@@ -95,19 +96,34 @@ class ProviderConfigsTests(unittest.TestCase):
         store = self._store()
         self._insert(store, "c1", allowed_users=["alice"], repo_pattern="hf/repo")
 
-        self.assertIsNotNone(store.find_provider_config(
-            user="alice", user_orgs=[], owner="hf", repo="repo",
-        ))
-        self.assertIsNone(store.find_provider_config(
-            user="mallory", user_orgs=[], owner="hf", repo="repo",
-        ))
+        self.assertIsNotNone(
+            store.find_provider_config(
+                user="alice",
+                user_orgs=[],
+                owner="hf",
+                repo="repo",
+            )
+        )
+        self.assertIsNone(
+            store.find_provider_config(
+                user="mallory",
+                user_orgs=[],
+                owner="hf",
+                repo="repo",
+            )
+        )
 
     def test_org_membership_grants_access(self) -> None:
         store = self._store()
         self._insert(store, "c1", allowed_orgs=["huggingface"], repo_pattern="hf/repo")
-        self.assertIsNotNone(store.find_provider_config(
-            user="alice", user_orgs=["HuggingFace"], owner="hf", repo="repo",
-        ))
+        self.assertIsNotNone(
+            store.find_provider_config(
+                user="alice",
+                user_orgs=["HuggingFace"],
+                owner="hf",
+                repo="repo",
+            )
+        )
 
     def test_exact_repo_beats_wildcard(self) -> None:
         store = self._store()
@@ -115,18 +131,25 @@ class ProviderConfigsTests(unittest.TestCase):
         # is updated_at DESC, the matcher must still prefer the exact
         # pattern regardless of recency.
         self._insert(
-            store, "wild",
-            allowed_orgs=["hf"], repo_pattern="hf/*",
+            store,
+            "wild",
+            allowed_orgs=["hf"],
+            repo_pattern="hf/*",
             default_model="wild-model",
         )
         time.sleep(0.01)
         self._insert(
-            store, "exact",
-            allowed_orgs=["hf"], repo_pattern="hf/transformers",
+            store,
+            "exact",
+            allowed_orgs=["hf"],
+            repo_pattern="hf/transformers",
             default_model="exact-model",
         )
         match = store.find_provider_config(
-            user="alice", user_orgs=["hf"], owner="hf", repo="transformers",
+            user="alice",
+            user_orgs=["hf"],
+            owner="hf",
+            repo="transformers",
         )
         assert match is not None
         self.assertEqual(match["id"], "exact")
@@ -134,18 +157,25 @@ class ProviderConfigsTests(unittest.TestCase):
     def test_exact_wins_even_when_wildcard_is_newer(self) -> None:
         store = self._store()
         self._insert(
-            store, "exact",
-            allowed_orgs=["hf"], repo_pattern="hf/transformers",
+            store,
+            "exact",
+            allowed_orgs=["hf"],
+            repo_pattern="hf/transformers",
             default_model="exact-model",
         )
         time.sleep(0.01)
         self._insert(
-            store, "wild",
-            allowed_orgs=["hf"], repo_pattern="hf/*",
+            store,
+            "wild",
+            allowed_orgs=["hf"],
+            repo_pattern="hf/*",
             default_model="wild-model",
         )
         match = store.find_provider_config(
-            user="alice", user_orgs=["hf"], owner="hf", repo="transformers",
+            user="alice",
+            user_orgs=["hf"],
+            owner="hf",
+            repo="transformers",
         )
         assert match is not None
         self.assertEqual(match["id"], "exact")
@@ -153,12 +183,17 @@ class ProviderConfigsTests(unittest.TestCase):
     def test_wildcard_used_when_no_exact_match(self) -> None:
         store = self._store()
         self._insert(
-            store, "wild",
-            allowed_orgs=["hf"], repo_pattern="hf/*",
+            store,
+            "wild",
+            allowed_orgs=["hf"],
+            repo_pattern="hf/*",
             default_model="wild-model",
         )
         match = store.find_provider_config(
-            user="alice", user_orgs=["hf"], owner="hf", repo="datasets",
+            user="alice",
+            user_orgs=["hf"],
+            owner="hf",
+            repo="datasets",
         )
         assert match is not None
         self.assertEqual(match["id"], "wild")
@@ -168,18 +203,25 @@ class ProviderConfigsTests(unittest.TestCase):
         # Two configs with the same repo pattern (same specificity);
         # the most recently updated should win.
         self._insert(
-            store, "older",
-            allowed_orgs=["hf"], repo_pattern="hf/transformers",
+            store,
+            "older",
+            allowed_orgs=["hf"],
+            repo_pattern="hf/transformers",
             default_model="older",
         )
         time.sleep(0.01)
         self._insert(
-            store, "newer",
-            allowed_orgs=["hf"], repo_pattern="hf/transformers",
+            store,
+            "newer",
+            allowed_orgs=["hf"],
+            repo_pattern="hf/transformers",
             default_model="newer",
         )
         match = store.find_provider_config(
-            user="alice", user_orgs=["hf"], owner="hf", repo="transformers",
+            user="alice",
+            user_orgs=["hf"],
+            owner="hf",
+            repo="transformers",
         )
         assert match is not None
         self.assertEqual(match["id"], "newer")
@@ -187,21 +229,33 @@ class ProviderConfigsTests(unittest.TestCase):
     def test_provider_filter_narrows_candidates(self) -> None:
         store = self._store()
         self._insert(
-            store, "openai-cfg",
-            provider="openai", allowed_orgs=["hf"], repo_pattern="hf/transformers",
+            store,
+            "openai-cfg",
+            provider="openai",
+            allowed_orgs=["hf"],
+            repo_pattern="hf/transformers",
         )
         self._insert(
-            store, "anthropic-cfg",
-            provider="anthropic", allowed_orgs=["hf"], repo_pattern="hf/transformers",
+            store,
+            "anthropic-cfg",
+            provider="anthropic",
+            allowed_orgs=["hf"],
+            repo_pattern="hf/transformers",
         )
         a = store.find_provider_config(
-            user="alice", user_orgs=["hf"], owner="hf", repo="transformers",
+            user="alice",
+            user_orgs=["hf"],
+            owner="hf",
+            repo="transformers",
             provider="anthropic",
         )
         assert a is not None
         self.assertEqual(a["id"], "anthropic-cfg")
         o = store.find_provider_config(
-            user="alice", user_orgs=["hf"], owner="hf", repo="transformers",
+            user="alice",
+            user_orgs=["hf"],
+            owner="hf",
+            repo="transformers",
             provider="openai",
         )
         assert o is not None
@@ -210,16 +264,29 @@ class ProviderConfigsTests(unittest.TestCase):
     def test_returns_none_when_no_match(self) -> None:
         store = self._store()
         self._insert(
-            store, "c1", allowed_orgs=["hf"], repo_pattern="hf/transformers",
+            store,
+            "c1",
+            allowed_orgs=["hf"],
+            repo_pattern="hf/transformers",
         )
         # Wrong repo entirely.
-        self.assertIsNone(store.find_provider_config(
-            user="alice", user_orgs=["hf"], owner="other", repo="repo",
-        ))
+        self.assertIsNone(
+            store.find_provider_config(
+                user="alice",
+                user_orgs=["hf"],
+                owner="other",
+                repo="repo",
+            )
+        )
         # Right repo, wrong user (no orgs match, not in allowed_users).
-        self.assertIsNone(store.find_provider_config(
-            user="alice", user_orgs=["other-org"], owner="hf", repo="transformers",
-        ))
+        self.assertIsNone(
+            store.find_provider_config(
+                user="alice",
+                user_orgs=["other-org"],
+                owner="hf",
+                repo="transformers",
+            )
+        )
 
 
 if __name__ == "__main__":

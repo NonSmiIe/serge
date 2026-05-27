@@ -36,6 +36,7 @@ class ToolCall:
     """One tool/function call emitted by the assistant. ``arguments`` is
     the raw string the model produced — the caller is responsible for
     JSON-parsing it (and for handling models that emit malformed JSON)."""
+
     id: str
     name: str
     arguments: str
@@ -234,9 +235,11 @@ class ChatCompletionClient:
                     from email.utils import parsedate_to_datetime
 
                     target = parsedate_to_datetime(ra)
-                    secs = (target.timestamp() - time.time())
+                    secs = target.timestamp() - time.time()
                     if secs > 0:
-                        return min(secs, ChatCompletionClient._RETRY_WAIT_CEILING_SECONDS)
+                        return min(
+                            secs, ChatCompletionClient._RETRY_WAIT_CEILING_SECONDS
+                        )
                 except Exception:  # noqa: BLE001
                     pass
         return float(2**attempt)
@@ -354,14 +357,22 @@ class ChatCompletionClient:
                     if isinstance(content, str) and content.strip() in ("None", "null"):
                         content = ""
                     usage = data.get("usage") or {}
-                    tool_calls = _parse_tool_calls_from_message(message.get("tool_calls"))
+                    tool_calls = _parse_tool_calls_from_message(
+                        message.get("tool_calls")
+                    )
                     finish_reason = choice.get("finish_reason")
                     # Non-streaming endpoints sometimes include
                     # `reasoning_content` directly on the message. Best-
                     # effort capture so the agent loop's "did the model
                     # think this turn?" check works either way.
-                    reasoning_text = message.get("reasoning_content") or message.get("reasoning") or ""
-                    reasoning_chars = len(reasoning_text) if isinstance(reasoning_text, str) else 0
+                    reasoning_text = (
+                        message.get("reasoning_content")
+                        or message.get("reasoning")
+                        or ""
+                    )
+                    reasoning_chars = (
+                        len(reasoning_text) if isinstance(reasoning_text, str) else 0
+                    )
                     if chunk_callback is not None and content:
                         # Non-streaming path: still emit the full content
                         # in one piece so callers don't need a separate
@@ -369,7 +380,9 @@ class ChatCompletionClient:
                         try:
                             chunk_callback("token", content)
                         except Exception:
-                            log.debug("chunk_callback raised; suppressing", exc_info=True)
+                            log.debug(
+                                "chunk_callback raised; suppressing", exc_info=True
+                            )
             except retryable as exc:
                 if attempt == attempts:
                     log.error(
@@ -542,9 +555,9 @@ class ChatCompletionClient:
                         first_delta_logged = True
                     for key, value in delta.items():
                         if isinstance(value, str) and value:
-                            delta_field_chars[key] = (
-                                delta_field_chars.get(key, 0) + len(value)
-                            )
+                            delta_field_chars[key] = delta_field_chars.get(
+                                key, 0
+                            ) + len(value)
                             if key in cls.REASONING_DELTA_KEYS:
                                 reasoning_buffer.append(value)
                                 # Forward reasoning live so the web UI can
@@ -591,10 +604,7 @@ class ChatCompletionClient:
                                     )
                         else:
                             content_head_buffer += piece
-                            if (
-                                len(content_head_buffer)
-                                >= CONTENT_HEAD_FLUSH_THRESHOLD
-                            ):
+                            if len(content_head_buffer) >= CONTENT_HEAD_FLUSH_THRESHOLD:
                                 content_head_flushed = True
                                 if (
                                     content_head_buffer.strip()
@@ -603,9 +613,7 @@ class ChatCompletionClient:
                                     parts.append(content_head_buffer)
                                     if chunk_callback is not None:
                                         try:
-                                            chunk_callback(
-                                                "token", content_head_buffer
-                                            )
+                                            chunk_callback("token", content_head_buffer)
                                         except Exception:
                                             log.debug(
                                                 "chunk_callback raised; suppressing",

@@ -11,6 +11,7 @@ process runs with workers=1, but the SSE worker threads write from
 background threads. We serialize writes with a module-level lock and run
 the connection with WAL + check_same_thread=False.
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -82,9 +83,16 @@ CREATE INDEX IF NOT EXISTS idx_provider_configs_repo
 
 # Kinds of SSE events worth persisting. Token/reasoning chunks blow up
 # the DB on big PRs and are useless after the fact.
-PERSIST_EVENT_KINDS = frozenset({
-    "log", "step", "tool", "error", "done", "metrics",
-})
+PERSIST_EVENT_KINDS = frozenset(
+    {
+        "log",
+        "step",
+        "tool",
+        "error",
+        "done",
+        "metrics",
+    }
+)
 
 
 class JobStore:
@@ -147,9 +155,18 @@ class JobStore:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    id, user, target_owner, target_repo, target_number,
-                    trigger_comment, llm_provider, llm_api_base, llm_model,
-                    created_at, now, status,
+                    id,
+                    user,
+                    target_owner,
+                    target_repo,
+                    target_number,
+                    trigger_comment,
+                    llm_provider,
+                    llm_api_base,
+                    llm_model,
+                    created_at,
+                    now,
+                    status,
                 ),
             )
             self._conn.commit()
@@ -306,11 +323,17 @@ class JobStore:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    id, provider, api_key, api_base, default_model,
+                    id,
+                    provider,
+                    api_key,
+                    api_base,
+                    default_model,
                     repo_pattern,
                     json.dumps([u.lower() for u in allowed_users]),
                     json.dumps([o.lower() for o in allowed_orgs]),
-                    created_by, now, now,
+                    created_by,
+                    now,
+                    now,
                 ),
             )
             self._conn.commit()
@@ -344,11 +367,15 @@ class JobStore:
                      WHERE id = ?
                     """,
                     (
-                        provider, new_api_key, api_base, default_model,
+                        provider,
+                        new_api_key,
+                        api_base,
+                        default_model,
                         repo_pattern,
                         json.dumps([u.lower() for u in allowed_users]),
                         json.dumps([o.lower() for o in allowed_orgs]),
-                        now, config_id,
+                        now,
+                        config_id,
                     ),
                 )
             else:
@@ -361,10 +388,14 @@ class JobStore:
                      WHERE id = ?
                     """,
                     (
-                        provider, api_base, default_model, repo_pattern,
+                        provider,
+                        api_base,
+                        default_model,
+                        repo_pattern,
                         json.dumps([u.lower() for u in allowed_users]),
                         json.dumps([o.lower() for o in allowed_orgs]),
-                        now, config_id,
+                        now,
+                        config_id,
                     ),
                 )
             self._conn.commit()

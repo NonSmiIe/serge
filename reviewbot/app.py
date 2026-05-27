@@ -53,7 +53,9 @@ def _review_worker(installation_id: int, req: ReviewRequest) -> None:
         else:
             run_review(cfg, gh, req)
     except Exception:
-        log.exception("review worker crashed for %s/%s#%d", req.owner, req.repo, req.number)
+        log.exception(
+            "review worker crashed for %s/%s#%d", req.owner, req.repo, req.number
+        )
 
 
 @app.get("/")

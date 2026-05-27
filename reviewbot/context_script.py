@@ -148,7 +148,9 @@ def run_context_script(
     if not script_path:
         return None
     base = cwd or os.getcwd()
-    full = script_path if os.path.isabs(script_path) else os.path.join(base, script_path)
+    full = (
+        script_path if os.path.isabs(script_path) else os.path.join(base, script_path)
+    )
     if not os.path.isfile(full):
         log.debug("context script %s not found, skipping", full)
         return None

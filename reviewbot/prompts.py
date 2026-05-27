@@ -267,7 +267,9 @@ def _scrub_delimiters(text: str) -> str:
 def build_system_prompt(review_rules: str, *, tools_enabled: bool = True) -> str:
     return SYSTEM_PROMPT_TEMPLATE.format(
         review_rules=review_rules.strip() or "(none)",
-        tools_section=_TOOLS_ENABLED_SECTION if tools_enabled else _TOOLS_DISABLED_SECTION,
+        tools_section=_TOOLS_ENABLED_SECTION
+        if tools_enabled
+        else _TOOLS_DISABLED_SECTION,
     )
 
 
@@ -356,7 +358,9 @@ def build_followup_system_prompt(
 ) -> str:
     return FOLLOWUP_SYSTEM_PROMPT_TEMPLATE.format(
         review_rules=review_rules.strip() or "(none)",
-        tools_section=_TOOLS_ENABLED_SECTION if tools_enabled else _TOOLS_DISABLED_SECTION,
+        tools_section=_TOOLS_ENABLED_SECTION
+        if tools_enabled
+        else _TOOLS_DISABLED_SECTION,
     )
 
 
@@ -406,7 +410,10 @@ def build_followup_user_prompt(
         path=path,
         side=side,
         line=line,
-        diff_hunk=_scrub_delimiters(diff_hunk or "(diff hunk unavailable — use browse tools to fetch context from the file)"),
+        diff_hunk=_scrub_delimiters(
+            diff_hunk
+            or "(diff hunk unavailable — use browse tools to fetch context from the file)"
+        ),
         thread_block=thread_block,
         today_iso=today.isoformat(),
         today_year=today.year,

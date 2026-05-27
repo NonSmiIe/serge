@@ -4,8 +4,8 @@ summary + per-comment text (or discard individual inline comments)
 before publishing. The published review still goes out under the
 GitHub App identity — OAuth is only used for access control.
 """
+
 import asyncio
-import base64
 import dataclasses
 import html as _html
 import json as _json
@@ -13,9 +13,6 @@ import logging
 import os
 import re
 import secrets
-import shutil
-import subprocess
-import tempfile
 import threading
 import time
 import urllib.parse
@@ -35,6 +32,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, URLSafeSerializer
 
+from .clone_cache import CloneCache, Checkout
 from .config import Config
 from .github_auth import (
     AppNotInstalledError,
@@ -106,9 +104,7 @@ def _resolve_session_secret() -> str:
         # Config.from_env(require_web=True) already enforces this when
         # DEV_NO_AUTH is off; the assert is a belt-and-braces guard so we
         # never silently fall back to a known string in production.
-        raise RuntimeError(
-            "WEB_SESSION_SECRET is required when DEV_NO_AUTH is off"
-        )
+        raise RuntimeError("WEB_SESSION_SECRET is required when DEV_NO_AUTH is off")
     # Dev-only path: mint a fresh random secret per process so sessions
     # don't survive restarts (which is fine in dev), and never share a
     # well-known string between deployments.
@@ -206,7 +202,9 @@ def _effective_user_orgs_for_repo(
                 extra.append(org)
         except Exception:  # noqa: BLE001
             log.warning(
-                "App-based org membership check failed for %s in %s", user, org,
+                "App-based org membership check failed for %s in %s",
+                user,
+                org,
                 exc_info=True,
             )
     if not extra:
@@ -283,6 +281,13 @@ if _crashed:
         "Marked %d job(s) left in 'running' state as crashed (server restart)",
         _crashed,
     )
+
+# Shared bare-clone + per-job worktree cache. One fetch per repo, cheap
+# worktrees per review (see clone_cache.py / SCALE_UP_PLAN.md phase 3).
+_clone_cache = CloneCache(cfg.web_clone_cache_dir)
+# Jobs left mid-flight by a previous process are marked crashed above;
+# their worktrees are orphaned, so clear them on startup.
+_clone_cache.reset_worktrees()
 
 
 def _infer_llm_provider(api_base: str) -> str:
@@ -443,7 +448,9 @@ def _api_base_for_provider(provider: str, custom_base: Optional[str]) -> str:
         raw_base = (custom_base or "").strip()
         if not raw_base:
             default_provider = _infer_llm_provider(cfg.llm_api_base)
-            raw_base = cfg.llm_api_base if default_provider == _LLM_PROVIDER_CUSTOM else ""
+            raw_base = (
+                cfg.llm_api_base if default_provider == _LLM_PROVIDER_CUSTOM else ""
+            )
         if not raw_base:
             raise HTTPException(status_code=400, detail="llm_base_url_required")
         return _normalize_llm_base_url(raw_base)
@@ -492,97 +499,6 @@ def _push_event(job: Job, kind: str, text: str) -> None:
         job.loop.call_soon_threadsafe(job.queue.put_nowait, event)
 
 
-def _clone_pr_head(
-    token: str, owner: str, repo: str, number: int, *, depth: int = 50
-) -> Optional[str]:
-    """Shallow-clone the PR head ref (``pull/<n>/head``) into a temp dir
-    so the LLM gets browse tools rooted at the PR's working tree. Works
-    for forked PRs too — GitHub exposes the merge ref on the base repo.
-
-    The installation token is passed via ``http.extraHeader`` rather than
-    embedded in the remote URL — that way it never lands in process
-    listings (``/proc/<pid>/cmdline``) or git's own error messages.
-
-    Returns the local path, or None if anything went wrong. The caller
-    is responsible for deleting the directory."""
-    tmpdir = tempfile.mkdtemp(prefix=f"serge-{owner}-{repo}-{number}-")
-    url = f"https://github.com/{owner}/{repo}.git"
-    # Basic-auth with x-access-token as the username and the token as the
-    # password is the documented form for GitHub App installation tokens.
-    basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-    auth_header = f"Authorization: Basic {basic}"
-
-    env = {
-        "PATH": os.environ.get("PATH", ""),
-        "HOME": os.environ.get("HOME", ""),
-        # Refuse interactive credential prompts (would otherwise hang on
-        # auth failure) and ignore host-wide git config so a quirky
-        # /etc/gitconfig can't influence behavior.
-        "GIT_TERMINAL_PROMPT": "0",
-        "GIT_CONFIG_NOSYSTEM": "1",
-        # The token-bearing header is only attached via -c; nothing on
-        # disk references it.
-        "GIT_ASKPASS": "/bin/false",
-    }
-
-    def _run(*args: str, timeout: int = 120, with_auth: bool = False) -> None:
-        cmd = ["git", "-C", tmpdir]
-        if with_auth:
-            cmd += ["-c", f"http.extraHeader={auth_header}"]
-        cmd += list(args)
-        subprocess.run(
-            cmd,
-            check=True,
-            capture_output=True,
-            timeout=timeout,
-            env=env,
-        )
-
-    try:
-        subprocess.run(
-            ["git", "init", "--quiet", tmpdir],
-            check=True,
-            capture_output=True,
-            timeout=30,
-            env=env,
-        )
-        _run("remote", "add", "origin", url)
-        # core.symlinks=false forces symlinks in the PR tree to be written
-        # as plain files, so helper tools rooted at the checkout cannot
-        # follow them out of the repo.
-        _run(
-            "-c", "core.symlinks=false",
-            "fetch",
-            "--depth",
-            str(depth),
-            "origin",
-            f"pull/{number}/head:pr",
-            timeout=180,
-            with_auth=True,
-        )
-        _run("-c", "core.symlinks=false", "checkout", "--quiet", "pr")
-        return tmpdir
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        # Defense in depth: scrub anything that looks like the token in
-        # case git or its transport ever echoed it back. The Authorization
-        # header itself is never on argv, so this is belt-and-braces.
-        stderr = ""
-        if isinstance(exc, subprocess.CalledProcessError) and exc.stderr:
-            stderr = exc.stderr.decode("utf-8", errors="replace")
-            stderr = stderr.replace(token, "<redacted-token>")
-            stderr = stderr.replace(basic, "<redacted-basic>")
-        log.warning(
-            "git clone failed for %s/%s#%d (%s): %s",
-            owner,
-            repo,
-            number,
-            type(exc).__name__,
-            stderr or exc,
-        )
-        shutil.rmtree(tmpdir, ignore_errors=True)
-        return None
-
-
 def _persist_terminal(job: Job) -> None:
     """Snapshot a finished job into the store so it survives a restart."""
     with job.history_lock:
@@ -605,7 +521,7 @@ def _run_review_worker(job: Job) -> None:
     target repo, shallow-clones the PR head so browse tools work, then
     calls prepare_review with a chunk_callback that streams events back
     to the SSE consumer."""
-    clone_path: Optional[str] = None
+    checkout: Optional[Checkout] = None
     try:
         assert cfg.github_app_id and cfg.github_private_key
         installation_id = installation_id_for_repo(
@@ -627,9 +543,10 @@ def _run_review_worker(job: Job) -> None:
             commenter=job.user,
         )
 
-        # Shallow-clone so the LLM has browse tools (matches Action mode,
-        # which gets a checkout via actions/checkout). If the clone fails
-        # we still run the review — just without tools.
+        # Check out the PR head so the LLM has browse tools (matches Action
+        # mode, which gets a checkout via actions/checkout). Backed by the
+        # shared clone cache: a worktree off a per-repo bare clone, not a
+        # cold clone. If it fails we still run the review — just without tools.
         worker_cfg = dataclasses.replace(
             cfg,
             llm_api_base=job.llm_api_base,
@@ -639,23 +556,30 @@ def _run_review_worker(job: Job) -> None:
         )
         if not _bool_env_safe("WEB_DISABLE_CHECKOUT", False):
             _push_event(job, "step", "clone")
-            _push_event(job, "log", "Cloning PR head…")
+            _push_event(job, "log", "Preparing PR checkout…")
             t0 = time.monotonic()
-            clone_path = _clone_pr_head(
-                token, job.target_owner, job.target_repo, job.target_number
+            checkout = _clone_cache.acquire(
+                token,
+                job.target_owner,
+                job.target_repo,
+                job.target_number,
+                job_id=job.id,
+                depth=cfg.web_clone_depth,
             )
-            if clone_path:
+            if checkout:
                 _push_event(
                     job,
                     "log",
-                    f"Clone ready in {time.monotonic() - t0:.1f}s ({clone_path})",
+                    f"Checkout ready in {time.monotonic() - t0:.1f}s ({checkout.path})",
                 )
-                worker_cfg = dataclasses.replace(worker_cfg, repo_checkout_path=clone_path)
+                worker_cfg = dataclasses.replace(
+                    worker_cfg, repo_checkout_path=checkout.path
+                )
             else:
                 _push_event(
                     job,
                     "log",
-                    "Clone failed; continuing without browse tools",
+                    "Checkout failed; continuing without browse tools",
                 )
 
         draft = prepare_review(
@@ -741,8 +665,9 @@ def _run_review_worker(job: Job) -> None:
         _push_event(job, "error", job.error)
         _push_event(job, "done", "")
     finally:
-        if clone_path:
-            shutil.rmtree(clone_path, ignore_errors=True)
+        # Drop this job's worktree + branch; the bare repo and its objects
+        # stay warm for the next review on the same repo.
+        _clone_cache.release(checkout)
         # Snapshot the final state into SQLite. Every terminal branch
         # above sets job.status to a non-'running' value, so this also
         # clears the 'running' marker we'd otherwise reap on next restart.
@@ -761,6 +686,23 @@ def _bool_env_safe(name: str, default: bool) -> bool:
 # ---------------------------------------------------------------------------
 app = FastAPI(title="Serge web reviewer")
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
+
+@app.on_event("startup")
+async def _start_clone_cache_gc() -> None:
+    """Hourly GC of the clone cache: drop bare repos untouched for longer
+    than the TTL. Runs in a thread so it never blocks the event loop."""
+    ttl = cfg.web_clone_cache_ttl_seconds
+
+    async def _loop() -> None:
+        while True:
+            await asyncio.sleep(3600)
+            try:
+                await asyncio.to_thread(_clone_cache.gc, ttl)
+            except Exception:  # noqa: BLE001
+                log.exception("clone cache GC failed")
+
+    asyncio.create_task(_loop())
 
 
 @app.middleware("http")
@@ -863,7 +805,9 @@ def auth_login(request: Request) -> Response:
     state = secrets.token_urlsafe(24)
     sess = _load_session(request)
     sess["oauth_state"] = state
-    redirect_uri = cfg.github_oauth_callback_url or str(request.url_for("auth_callback"))
+    redirect_uri = cfg.github_oauth_callback_url or str(
+        request.url_for("auth_callback")
+    )
     params = {
         "client_id": cfg.github_oauth_client_id or "",
         "redirect_uri": redirect_uri,
@@ -943,11 +887,7 @@ async def auth_callback(request: Request) -> Response:
         # view of org membership (public_members first, then the App
         # installation route) which isn't subject to user-side SSO.
         verified_via_app: list[str] = []
-        if (
-            cfg.web_allowed_orgs
-            and cfg.github_app_id
-            and cfg.github_private_key
-        ):
+        if cfg.web_allowed_orgs and cfg.github_app_id and cfg.github_private_key:
             for org in cfg.web_allowed_orgs:
                 if user_is_org_member(
                     cfg.github_app_id, cfg.github_private_key, org, login
@@ -1091,9 +1031,7 @@ def llm_options(request: Request) -> JSONResponse:
 
 
 @app.get("/reviews/lookup-provider")
-def lookup_provider(
-    request: Request, owner: str, repo: str
-) -> JSONResponse:
+def lookup_provider(request: Request, owner: str, repo: str) -> JSONResponse:
     """Pre-flight match for the submit form: given a (owner, repo)
     pulled from the PR field as the user types, return the provider +
     default model from the best-matching ``provider_config`` so the UI
@@ -1110,10 +1048,17 @@ def lookup_provider(
     payload: dict[str, Any] = {"match": None}
     placeholder = JSONResponse(payload)
     user_orgs = _effective_user_orgs_for_repo(
-        request, placeholder, user, owner, repo,
+        request,
+        placeholder,
+        user,
+        owner,
+        repo,
     )
     matched = _store.find_provider_config(
-        user=user, user_orgs=user_orgs, owner=owner, repo=repo,
+        user=user,
+        user_orgs=user_orgs,
+        owner=owner,
+        repo=repo,
     )
     if matched is not None:
         payload = {
@@ -1173,7 +1118,10 @@ async def admin_create_provider(request: Request) -> JSONResponse:
     )
     log.info(
         "user %s added provider config %s (%s for %s)",
-        user, config_id, fields["provider"], fields["repo_pattern"],
+        user,
+        config_id,
+        fields["provider"],
+        fields["repo_pattern"],
     )
     row = _store.get_provider_config(config_id)
     assert row is not None
@@ -1181,9 +1129,7 @@ async def admin_create_provider(request: Request) -> JSONResponse:
 
 
 @app.patch("/admin/providers/{config_id}")
-async def admin_update_provider(
-    request: Request, config_id: str
-) -> JSONResponse:
+async def admin_update_provider(request: Request, config_id: str) -> JSONResponse:
     _require_same_origin(request)
     user = _require_user(request)
     existing = _store.get_provider_config(config_id)
@@ -1207,7 +1153,10 @@ async def admin_update_provider(
         raise HTTPException(status_code=404, detail="config_not_found")
     log.info(
         "user %s updated provider config %s (%s for %s; key_replaced=%s)",
-        user, config_id, fields["provider"], fields["repo_pattern"],
+        user,
+        config_id,
+        fields["provider"],
+        fields["repo_pattern"],
         fields["api_key"] is not None,
     )
     row = _store.get_provider_config(config_id)
@@ -1247,7 +1196,11 @@ async def submit_review(request: Request) -> JSONResponse:
     # every subsequent submission.
     session_response = JSONResponse({})
     user_orgs = _effective_user_orgs_for_repo(
-        request, session_response, user, owner, repo,
+        request,
+        session_response,
+        user,
+        owner,
+        repo,
     )
     matched = _store.find_provider_config(
         user=user,
@@ -1266,7 +1219,8 @@ async def submit_review(request: Request) -> JSONResponse:
         )
     # Per-config api_base wins for custom; built-ins use the static map.
     llm_api_base = _api_base_for_provider(
-        llm_provider, custom_base=matched.get("api_base") or payload.get("llm_base_url"),
+        llm_provider,
+        custom_base=matched.get("api_base") or payload.get("llm_base_url"),
     )
     # User-supplied model > config default_model > static per-provider default.
     requested_model = (payload.get("llm_model") or "").strip()
@@ -1468,9 +1422,7 @@ def review_draft(
 ) -> JSONResponse:
     job = _get_owned_job(request, owner, repo, number, job_id)
     if job.draft is None:
-        return JSONResponse(
-            {"status": job.status, "error": job.error, "draft": None}
-        )
+        return JSONResponse({"status": job.status, "error": job.error, "draft": None})
     return JSONResponse(
         {
             "status": job.status,

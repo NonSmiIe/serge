@@ -114,15 +114,11 @@ def extract_hunk_snippet(
 
         if raw.startswith("+") and not raw.startswith("+++"):
             is_target = side == "RIGHT" and new_line == target_line
-            structured.append(
-                DiffSnippetLine("+", None, new_line, raw[1:], is_target)
-            )
+            structured.append(DiffSnippetLine("+", None, new_line, raw[1:], is_target))
             new_line += 1
         elif raw.startswith("-") and not raw.startswith("---"):
             is_target = side == "LEFT" and old_line == target_line
-            structured.append(
-                DiffSnippetLine("-", old_line, None, raw[1:], is_target)
-            )
+            structured.append(DiffSnippetLine("-", old_line, None, raw[1:], is_target))
             old_line += 1
         elif raw.startswith(" "):
             is_target = side == "RIGHT" and new_line == target_line
@@ -133,9 +129,7 @@ def extract_hunk_snippet(
             old_line += 1
         # Ignore "\ No newline at end of file" and anything else.
 
-    target_idx = next(
-        (i for i, ln in enumerate(structured) if ln.is_target), None
-    )
+    target_idx = next((i for i, ln in enumerate(structured) if ln.is_target), None)
     if target_idx is None:
         return []
 

@@ -37,6 +37,7 @@ class InlineCommentContext:
     inside an existing thread; the reply endpoint accepts any comment_id
     in the thread so we always use ``comment_id`` to post the reply.
     """
+
     comment_id: int
     path: str
     side: str
@@ -64,6 +65,7 @@ class DraftComment:
     address when applying edits (override body, discard). ``diff_hunk``
     is a GitHub-style snippet around the commented line (empty if the
     patch wasn't available)."""
+
     id: str
     path: str
     side: str
@@ -76,6 +78,7 @@ class DraftComment:
 class ReviewDraft:
     """The output of prepare_review: everything needed to publish a
     review, but not yet posted. Tweakable from the web UI via edits."""
+
     owner: str
     repo: str
     number: int
@@ -101,6 +104,7 @@ class ReviewDraft:
 class ReviewEdits:
     """User-supplied tweaks applied at publish time. Only fields that are
     set override the draft; missing keys mean "use the draft value"."""
+
     summary: Optional[str] = None
     event: Optional[str] = None
     # Map of DraftComment.id -> override body (None = keep original).
@@ -180,7 +184,7 @@ class _DiffChunk:
 
 
 def _copy_positions_map(
-    positions: dict[str, set[tuple[str, int]]]
+    positions: dict[str, set[tuple[str, int]]],
 ) -> dict[str, set[tuple[str, int]]]:
     return {path: set(vals) for path, vals in positions.items()}
 
@@ -230,7 +234,11 @@ def _split_annotated_block(
             units.append(section_text)
             continue
 
-        prefix = section_lines[0] if section_lines and section_lines[0].startswith("@@") else ""
+        prefix = (
+            section_lines[0]
+            if section_lines and section_lines[0].startswith("@@")
+            else ""
+        )
         remainder = section_lines[1:] if prefix else section_lines
         chunk_lines: list[str] = []
         chunk_len = len(prefix)
@@ -338,7 +346,9 @@ def _validate_comments(
         side = c.get("side", "RIGHT")
         line = c.get("line")
         body = c.get("body")
-        if not (isinstance(path, str) and isinstance(line, int) and isinstance(body, str)):
+        if not (
+            isinstance(path, str) and isinstance(line, int) and isinstance(body, str)
+        ):
             rejected.append(c)
             continue
         side = side if side in ("RIGHT", "LEFT") else "RIGHT"
@@ -353,6 +363,7 @@ def _validate_comments(
 @dataclass
 class _AggregateMetrics:
     """Accumulated stats across all LLM turns in one agentic loop."""
+
     turns: int = 0
     tool_calls: int = 0
     latency_seconds: float = 0.0
@@ -367,7 +378,9 @@ def _format_aggregated_metrics(m: "_AggregateMetrics") -> str:
         f"{m.latency_seconds:.1f}s",
     ]
     if m.prompt_tokens or m.completion_tokens:
-        parts.append(f"{m.prompt_tokens or '?'} in / {m.completion_tokens or '?'} out tokens")
+        parts.append(
+            f"{m.prompt_tokens or '?'} in / {m.completion_tokens or '?'} out tokens"
+        )
     return " · ".join(parts)
 
 
@@ -475,10 +488,14 @@ def _build_runner_context(
             f"This PR diff was split into {chunk_total} chunks because the full diff exceeded "
             f"the per-call budget. You are reviewing chunk {chunk_index} of {chunk_total}."
         )
-        notes.append("Only place inline comments on lines shown in this chunk's diff below.")
+        notes.append(
+            "Only place inline comments on lines shown in this chunk's diff below."
+        )
         changed_paths = [f.get("filename") for f in all_files if f.get("filename")]
         if changed_paths:
-            notes.append("Changed files in the full PR:\n- " + "\n- ".join(changed_paths))
+            notes.append(
+                "Changed files in the full PR:\n- " + "\n- ".join(changed_paths)
+            )
     if skipped:
         notes.append(
             "The following files were excluded from this review by the target repo's "
@@ -489,9 +506,7 @@ def _build_runner_context(
     return "\n\n".join(notes) if notes else None
 
 
-def _merge_chunk_summaries(
-    summaries: list[tuple[int, str]], chunk_total: int
-) -> str:
+def _merge_chunk_summaries(summaries: list[tuple[int, str]], chunk_total: int) -> str:
     """Fallback merge used when the synthesis LLM call is unavailable or
     fails. Joins per-chunk summaries with blank lines and never mentions
     chunking — that is an internal implementation detail and would
@@ -722,7 +737,9 @@ def _run_agentic_loop(
             tools=tools_arg,
             tool_choice="auto" if tools_arg else None,
             chunk_callback=chunk_cb,
-            extra={"reasoning_effort": cfg.llm_reasoning_effort} if cfg.llm_reasoning_effort else None,
+            extra={"reasoning_effort": cfg.llm_reasoning_effort}
+            if cfg.llm_reasoning_effort
+            else None,
         )
         metrics.turns += 1
         metrics.latency_seconds += chat.latency_seconds
@@ -760,18 +777,20 @@ def _run_agentic_loop(
         # Append the assistant's tool_calls turn so the next request has
         # the full conversation, then execute each call and append the
         # results as `tool` messages.
-        messages.append({
-            "role": "assistant",
-            "content": chat.content or None,
-            "tool_calls": [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.name, "arguments": tc.arguments},
-                }
-                for tc in chat.tool_calls
-            ],
-        })
+        messages.append(
+            {
+                "role": "assistant",
+                "content": chat.content or None,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.name, "arguments": tc.arguments},
+                    }
+                    for tc in chat.tool_calls
+                ],
+            }
+        )
         for tc in chat.tool_calls:
             metrics.tool_calls += 1
             if emit is not None:
@@ -781,12 +800,14 @@ def _run_agentic_loop(
             # Kimi-K2 (and some other engines) require ``name`` on tool
             # replies; OpenAI's spec ignores it. Always sending it is
             # the safer cross-provider choice.
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "name": tc.name,
-                "content": result,
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "name": tc.name,
+                    "content": result,
+                }
+            )
 
     # Iteration budget hit — force a final answer with tools disabled.
     # Only reachable when ``tool_max_iterations > 0`` and the model
@@ -801,15 +822,19 @@ def _run_agentic_loop(
     )
     if emit is not None:
         emit("log", "Agent budget exhausted; asking for a final review without tools")
-    messages.append({
-        "role": "user",
-        "content": final_force_message or _DEFAULT_FORCE_FINAL_MESSAGE,
-    })
+    messages.append(
+        {
+            "role": "user",
+            "content": final_force_message or _DEFAULT_FORCE_FINAL_MESSAGE,
+        }
+    )
     chat = llm.complete(
         messages,
         max_tokens=cfg.llm_max_tokens,
         chunk_callback=chunk_cb,
-        extra={"reasoning_effort": cfg.llm_reasoning_effort} if cfg.llm_reasoning_effort else None,
+        extra={"reasoning_effort": cfg.llm_reasoning_effort}
+        if cfg.llm_reasoning_effort
+        else None,
     )
     metrics.turns += 1
     metrics.latency_seconds += chat.latency_seconds
@@ -916,7 +941,9 @@ def _summarize_args_str(raw: str, limit: int = 200) -> str:
     return s if len(s) <= limit else s[:limit] + "..."
 
 
-def _summarize_rejected_comments(rejected: list[dict[str, Any]], max_items: int = 5) -> str:
+def _summarize_rejected_comments(
+    rejected: list[dict[str, Any]], max_items: int = 5
+) -> str:
     """Render the first few rejected comments as `path:line` refs so the
     log line stays short even if the model emitted dozens of bogus inline
     comments. Without this, the full payloads bloat the action log."""
@@ -930,10 +957,14 @@ def _summarize_rejected_comments(rejected: list[dict[str, Any]], max_items: int 
     return ", ".join(refs)
 
 
-def _load_review_rules(gh: GitHubClient, owner: str, repo: str, pr: dict, cfg: Config) -> str:
+def _load_review_rules(
+    gh: GitHubClient, owner: str, repo: str, pr: dict, cfg: Config
+) -> str:
     default_branch = pr.get("base", {}).get("repo", {}).get("default_branch") or "main"
     try:
-        content = gh.get_file_contents(owner, repo, cfg.review_rules_path, ref=default_branch)
+        content = gh.get_file_contents(
+            owner, repo, cfg.review_rules_path, ref=default_branch
+        )
     except Exception:
         log.exception("failed to fetch review rules")
         content = None
@@ -1039,9 +1070,13 @@ def prepare_review(
             f"Context script: {len(extra_context or '')} chars context, {len(skip_paths)} skip(s)",
         )
 
-    diff_chunks, skipped = _build_annotated_diff_chunks(files, cfg.max_diff_chars, skip_paths)
+    diff_chunks, skipped = _build_annotated_diff_chunks(
+        files, cfg.max_diff_chars, skip_paths
+    )
     if skipped:
-        log.info("Excluded %d file(s) per .ai/context-script: %s", len(skipped), skipped)
+        log.info(
+            "Excluded %d file(s) per .ai/context-script: %s", len(skipped), skipped
+        )
     if not diff_chunks:
         gh.post_issue_comment(
             req.owner,
@@ -1078,7 +1113,9 @@ def prepare_review(
         bill_to=cfg.llm_bill_to,
         stream=cfg.llm_stream,
     )
-    system_prompt = build_system_prompt(review_rules, tools_enabled=tool_env is not None)
+    system_prompt = build_system_prompt(
+        review_rules, tools_enabled=tool_env is not None
+    )
     total_metrics = _AggregateMetrics()
     all_valid: list[dict[str, Any]] = []
     all_events: list[str] = []
@@ -1445,9 +1482,7 @@ def run_followup(cfg: Config, gh: GitHubClient, req: ReviewRequest) -> None:
     if metrics_line:
         body += f"\n\n_{metrics_line}_"
 
-    gh.reply_to_review_comment(
-        req.owner, req.repo, req.number, inline.comment_id, body
-    )
+    gh.reply_to_review_comment(req.owner, req.repo, req.number, inline.comment_id, body)
     log.info(
         "Posted follow-up reply on %s/%s#%d comment %d (%s)",
         req.owner,
