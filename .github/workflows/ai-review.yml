@@ -46,10 +46,26 @@ jobs:
     concurrency:
       group: claude-ai-review-${{ github.event.issue.number || github.event.pull_request.number }}
       cancel-in-progress: false
-    # Must run inside the VPN so https://serge.huggingface.tech/ is reachable.
+    # Must join Tailscale so https://serge.huggingface.tech/ is reachable.
     runs-on:
       group: aws-general-8-plus
     steps:
+      - name: Check Tailscale secret
+        env:
+          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TAILSCALE_AUTHKEY}" ]; then
+            echo "::error::TAILSCALE_AUTHKEY secret is not set" >&2
+            exit 1
+          fi
+
+      - name: Connect to Tailscale
+        uses: huggingface/tailscale-action@main
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
       - name: Relay event to the Serge GitHub App
         env:
           WEBHOOK_URL: https://serge.huggingface.tech/webhook
