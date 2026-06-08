@@ -1,5 +1,6 @@
 ---
 title: GitHub App Webhook
+nav_title: GitHub App
 ---
 
 GitHub App mode runs a webhook server that listens for trigger comments, calls

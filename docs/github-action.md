@@ -1,5 +1,6 @@
 ---
 title: GitHub Action
+nav_title: Action
 ---
 
 The GitHub Action runs inside the target repository's workflow. It is the
@@ -10,6 +11,7 @@ or GitHub App.
 
 Create `.github/workflows/ai-review.yml`:
 
+{% raw %}
 ```yaml
 name: AI PR Review
 on:
@@ -42,6 +44,7 @@ jobs:
           llm_api_key: ${{ secrets.LLM_API_KEY }}
           llm_api_base: ${{ secrets.LLM_API_BASE || 'https://api.openai.com/v1' }}
 ```
+{% endraw %}
 
 Pin `huggingface/ai-reviewer` to a tag or commit SHA when you need
 reproducible behavior.

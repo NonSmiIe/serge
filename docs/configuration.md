@@ -1,5 +1,6 @@
 ---
 title: Configuration
+nav_title: Config
 ---
 
 Configuration is passed as Action inputs in GitHub Action mode and as

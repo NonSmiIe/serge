@@ -1,5 +1,6 @@
 ---
 title: Staged Web App
+nav_title: Web App
 ---
 
 The web app lets a signed-in reviewer start a review, watch the LLM stream its
