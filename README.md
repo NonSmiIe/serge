@@ -37,4 +37,4 @@ For fork-heavy repositories or hosted deployments, use the
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](https://github.com/huggingface/ai-reviewer/blob/main/LICENSE).
