@@ -1,10 +1,18 @@
 .PHONY: format test
 
-PYTHON ?= python
-RUFF ?= ruff
+PYTHON ?= python3
+VENV ?= .venv
+VENV_PYTHON := $(VENV)/bin/python
+RUFF := $(VENV)/bin/ruff
 
-format:
+$(VENV)/.installed: pyproject.toml
+	$(PYTHON) -m venv $(VENV)
+	$(VENV_PYTHON) -m pip install --upgrade pip
+	$(VENV_PYTHON) -m pip install -e '.[web]' pytest ruff
+	touch $(VENV)/.installed
+
+format: $(VENV)/.installed
 	$(RUFF) format reviewbot tests
 
-test:
-	$(PYTHON) -m pytest tests/
+test: $(VENV)/.installed
+	$(VENV_PYTHON) -m pytest tests/
