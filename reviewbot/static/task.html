@@ -64,6 +64,7 @@
           const b = document.getElementById("error-banner");
           b.textContent = info.error;
           b.className = "error";
+          b.style.whiteSpace = "pre-wrap";
         }
         if (info.result) {
           const res = info.result;
@@ -84,8 +85,19 @@
     es.onmessage = (e) => { try { append(JSON.parse(e.data)); } catch { append(e.data); } };
     ["step", "tool", "error", "log"].forEach(kind => {
       es.addEventListener(kind, (e) => {
+        // The browser also fires a native "error" event (no .data) on a
+        // dropped connection; ignore those here — es.onerror handles them.
+        if (e.data == null) return;
         let txt;
         try { txt = JSON.parse(e.data); } catch { txt = e.data; }
+        if (kind === "error") {
+          // Surface the full server-side error (incl. multi-line hints) in
+          // a prominent banner as well as the console.
+          const b = document.getElementById("error-banner");
+          b.textContent = txt;
+          b.className = "error";
+          b.style.whiteSpace = "pre-wrap";
+        }
         append(kind === "log" ? txt : `[${kind}] ${txt}`);
       });
     });

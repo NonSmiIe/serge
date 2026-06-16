@@ -44,20 +44,31 @@
         title: new Date(e.created_at * 1000).toLocaleString(),
       });
 
+      // Type: task | webhook | webapp. webhook = kicked off by a GitHub
+      // comment, webapp = submitted through the UI, task = the write-capable
+      // /tasks flow.
+      const type =
+        e.kind === "task"
+          ? "task"
+          : e.source === "webhook"
+            ? "webhook"
+            : "webapp";
+      const tdType = document.createElement("td");
+      const typeTag = document.createElement("span");
+      typeTag.className = `source-tag type-${type}`;
+      typeTag.textContent = type;
+      tdType.appendChild(typeTag);
+
       const tdUser = cell(e.user || "—");
-      // Webhook-triggered reviews have no logged-in submitter; tag them so
-      // the journal makes clear they were kicked off by a GitHub comment.
-      if (e.source === "webhook") {
-        const tag = document.createElement("span");
-        tag.className = "source-tag";
-        tag.textContent = "webhook";
-        tdUser.appendChild(tag);
-      }
 
       const tdPr = document.createElement("td");
       const link = document.createElement("a");
       link.href = e.url;
-      link.textContent = `${e.owner}/${e.repo}#${e.number}`;
+      // Task jobs have no PR number until the PR is opened; show repo only.
+      link.textContent =
+        e.kind === "task"
+          ? `${e.owner}/${e.repo}`
+          : `${e.owner}/${e.repo}#${e.number}`;
       tdPr.appendChild(link);
 
       const tdProvider = cell(e.provider || "—");
@@ -80,6 +91,7 @@
       tdStatus.appendChild(badge);
 
       tr.appendChild(tdWhen);
+      tr.appendChild(tdType);
       tr.appendChild(tdUser);
       tr.appendChild(tdPr);
       tr.appendChild(tdProvider);

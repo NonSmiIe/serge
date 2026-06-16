@@ -270,6 +270,26 @@ pre.console .reasoning {
   vertical-align: middle;
 }
 
+/* Journal "Type" column lives in its own cell, so no left margin there. */
+td .source-tag {
+  margin-left: 0;
+}
+
+.source-tag.type-task {
+  background: #e7f0ff;
+  color: #1f4fa3;
+}
+
+.source-tag.type-webhook {
+  background: #eef7ee;
+  color: #2e7d32;
+}
+
+.source-tag.type-webapp {
+  background: #f3eefb;
+  color: #6a3fb0;
+}
+
 .progress {
   list-style: none;
   padding: 0;

@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import httpx
+import requests
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import (
     HTMLResponse,
@@ -786,6 +787,24 @@ def _format_llm_error(exc: LLMResponseError) -> str:
     return f"LLM endpoint returned {exc.status_code}{reason_part}"
 
 
+def _format_github_http_error(exc: requests.HTTPError) -> str:
+    """Render a GitHub REST error for the task SSE client. The message comes
+    from GitHub's own response (no serge tokens), so it's safe to surface and
+    far more actionable than a generic "task crashed". Adds a hint for the
+    common write-permission failure on the /tasks flow."""
+    msg = str(exc) or "GitHub API request failed"
+    status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    lowered = msg.lower()
+    if status_code == 403 or "resource not accessible by integration" in lowered:
+        msg += (
+            "\n\nHint: the GitHub App installation lacks write access. The "
+            "/tasks flow needs Contents: write + Pull requests: write — grant "
+            "those in the App settings and re-accept the installation on the "
+            "org/repo."
+        )
+    return msg
+
+
 def _execute_review(
     job: Job,
     worker_cfg: Config,
@@ -1097,6 +1116,16 @@ def _run_task_worker(job: Job, worker_cfg: Config, req: TaskRequest) -> None:
         log.warning("LLM endpoint returned %d for task %s", exc.status_code, job.id)
         job.status = "error"
         job.error = _format_llm_error(exc)
+        emit("step", "error")
+        emit("error", job.error)
+        emit("done", "")
+    except requests.HTTPError as exc:
+        # GitHub REST failure (e.g. 403 on create_blob when the App lacks
+        # Contents: write). The message is GitHub's own response — safe and
+        # actionable — so surface it instead of the generic crash text.
+        log.warning("task %s GitHub API error: %s", job.id, exc)
+        job.status = "error"
+        job.error = _format_github_http_error(exc)
         emit("step", "error")
         emit("error", job.error)
         emit("done", "")
@@ -1534,6 +1563,7 @@ def journal_data(request: Request) -> JSONResponse:
                     "number": r["target_number"],
                     "status": r["status"],
                     "source": r["source"],
+                    "kind": r.get("kind") or "review",
                     "created_at": r["created_at"],
                     "updated_at": r["updated_at"],
                     "provider": r["llm_provider"],
@@ -1541,7 +1571,9 @@ def journal_data(request: Request) -> JSONResponse:
                     "prompt_tokens": r["prompt_tokens"],
                     "completion_tokens": r["completion_tokens"],
                     "url": (
-                        f"/reviews/{r['target_owner']}/{r['target_repo']}/"
+                        f"/tasks/{r['target_owner']}/{r['target_repo']}/{r['id']}"
+                        if (r.get("kind") or "review") == "task"
+                        else f"/reviews/{r['target_owner']}/{r['target_repo']}/"
                         f"{r['target_number']}/{r['id']}"
                     ),
                 }
