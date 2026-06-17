@@ -60,11 +60,13 @@ from .reviewer import (
 from .store import JobStore, decode_draft
 from .tasks import (
     TaskError,
+    TaskResult,
     TaskRequest,
     build_task_request,
     prepare_task,
     publish_task,
     resolve_existing_pr,
+    task_candidate_requests,
 )
 from .triggers import build_review_request
 
@@ -1076,19 +1078,60 @@ def _run_task_worker(job: Job, worker_cfg: Config, req: TaskRequest) -> None:
         emit("log", f"Checkout ready in {time.monotonic() - t0:.1f}s")
         worker_cfg = dataclasses.replace(worker_cfg, repo_checkout_path=checkout.path)
 
-        plan = prepare_task(
-            worker_cfg, req, existing_diff=existing_diff, chunk_callback=emit
-        )
-        result = publish_task(
-            worker_cfg,
-            gh,
-            req,
-            plan,
-            checkout=checkout,
-            clone_cache=_clone_cache,
-            job_id=job.id,
-            emit=emit,
-        )
+        candidate_reqs = task_candidate_requests(req)
+        last_no_change: Optional[TaskResult] = None
+        result: Optional[TaskResult] = None
+        for index, candidate_req in enumerate(candidate_reqs, start=1):
+            if len(candidate_reqs) > 1:
+                emit(
+                    "log",
+                    f"Starting candidate {index}/{len(candidate_reqs)} in a fresh LLM cycle",
+                )
+            plan = prepare_task(
+                worker_cfg,
+                candidate_req,
+                existing_diff=existing_diff,
+                chunk_callback=emit,
+            )
+            try:
+                attempt_result = publish_task(
+                    worker_cfg,
+                    gh,
+                    candidate_req,
+                    plan,
+                    checkout=checkout,
+                    clone_cache=_clone_cache,
+                    job_id=job.id,
+                    emit=emit,
+                )
+            except TaskError as exc:
+                if (
+                    exc.status_code == 422
+                    and index < len(candidate_reqs)
+                ):
+                    emit(
+                        "log",
+                        f"Candidate {index}/{len(candidate_reqs)} did not produce "
+                        f"an applicable patch: {exc}. Moving to the next group.",
+                    )
+                    continue
+                raise
+            if attempt_result.no_change and index < len(candidate_reqs):
+                last_no_change = attempt_result
+                emit(
+                    "log",
+                    f"Candidate {index}/{len(candidate_reqs)} produced no fix. "
+                    "Moving to the next group.",
+                )
+                continue
+            result = attempt_result
+            break
+        if result is None:
+            result = last_no_change or TaskResult(
+                mode=req.mode,
+                no_change=True,
+                message="No candidate produced a safe fix.",
+            )
         job.task_result = result.to_json()
         _store.save_task_result(job.id, _json.dumps(job.task_result))
         job.status = "done"

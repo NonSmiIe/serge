@@ -17,6 +17,7 @@ from reviewbot.tasks import (
     build_task_request,
     publish_task,
     resolve_existing_pr,
+    task_candidate_requests,
 )
 
 
@@ -215,6 +216,40 @@ class ResolveExistingPrTests(unittest.TestCase):
         with self.assertRaises(TaskError) as ctx:
             resolve_existing_pr(gh, req, _make_cfg(task_max_followups=5))
         self.assertEqual(ctx.exception.status_code, 429)
+
+
+class TaskCandidateRequestTests(unittest.TestCase):
+    def test_single_context_stays_single_candidate(self):
+        req = TaskRequest(
+            owner="a",
+            repo="b",
+            base_ref="main",
+            instruction="fix",
+            context="plain report",
+        )
+        self.assertEqual(task_candidate_requests(req), [req])
+
+    def test_serge_candidate_sections_are_split_with_preamble(self):
+        req = TaskRequest(
+            owner="a",
+            repo="b",
+            base_ref="main",
+            instruction="fix",
+            context=(
+                "shared report preamble\n\n"
+                "## Serge candidate failure group 1/2: first\n"
+                "first details\n\n"
+                "## Serge candidate failure group 2/2: second\n"
+                "second details\n"
+            ),
+        )
+        candidates = task_candidate_requests(req)
+        self.assertEqual(len(candidates), 2)
+        self.assertIn("shared report preamble", candidates[0].context)
+        self.assertIn("first details", candidates[0].context)
+        self.assertNotIn("second details", candidates[0].context)
+        self.assertIn("shared report preamble", candidates[1].context)
+        self.assertIn("second details", candidates[1].context)
 
 
 class PublishTaskTests(unittest.TestCase):

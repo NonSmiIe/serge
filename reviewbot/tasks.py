@@ -17,6 +17,7 @@ See ``TASKS_FLOW_PLAN.md`` for the full design.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 import subprocess
@@ -57,6 +58,9 @@ _TASK_FORCE_FINAL_MESSAGE = (
     "no extra commentary, and do not request more tools."
 )
 _BRANCH_PREFIX_RE = re.compile(r"^serge/[A-Za-z0-9._/-]+$")
+_CANDIDATE_HEADING_RE = re.compile(
+    r"(?m)^## Serge candidate failure group \d+/\d+: .+$"
+)
 
 VALID_MODES = ("new_pr", "existing_pr")
 
@@ -126,6 +130,27 @@ class TaskResult:
             "commit_sha": self.commit_sha,
             "changed_files": self.changed_files,
         }
+
+
+def task_candidate_requests(req: TaskRequest) -> list[TaskRequest]:
+    """Return one request per retryable task candidate.
+
+    The integration triage workflow can send several ordered failure groups in
+    a single task context. Each candidate gets an independent LLM cycle while
+    preserving the shared preamble before the first candidate heading.
+    """
+    matches = list(_CANDIDATE_HEADING_RE.finditer(req.context))
+    if len(matches) < 2:
+        return [req]
+
+    preamble = req.context[: matches[0].start()].strip()
+    candidates: list[TaskRequest] = []
+    for idx, match in enumerate(matches):
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(req.context)
+        chunk = req.context[match.start() : end].strip()
+        context = f"{preamble}\n\n{chunk}".strip() if preamble else chunk
+        candidates.append(dataclasses.replace(req, context=context))
+    return candidates
 
 
 # ---------------------------------------------------------------------------
