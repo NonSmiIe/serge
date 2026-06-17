@@ -36,6 +36,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature, URLSafeSerializer
 
+from . import __version__
 from .clone_cache import CloneCache, Checkout
 from .config import Config
 from .github_auth import (
@@ -2293,6 +2294,7 @@ def _draft_to_dict(draft: ReviewDraft) -> dict[str, Any]:
         "rejected_count": draft.rejected_count,
         "metrics_line": draft.metrics_line,
         "model": draft.model,
+        "version": __version__,
         "comments": [dataclasses.asdict(c) for c in draft.comments],
     }
 

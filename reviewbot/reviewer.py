@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+from . import __version__
 from .compression import MessageCompressor
 from .config import Config
 from .context_script import run_context_script
@@ -1398,7 +1399,7 @@ def publish_review(
         )
     if cfg.is_staging:
         body += "\n\n_Note: posted from a staging deployment._"
-    footer_parts = []
+    footer_parts = [f"serge `v{__version__}`"]
     if draft.model:
         footer_parts.append(f"model: `{draft.model}`")
     if draft.metrics_line:

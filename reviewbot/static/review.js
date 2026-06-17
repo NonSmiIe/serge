@@ -239,7 +239,11 @@
 
   function renderDraftForm() {
     if (!draft) return;
-    draftMeta.textContent = `${draft.owner}/${draft.repo}#${draft.number} · ${draft.metrics_line || ""}`;
+    const statsParts = [];
+    if (draft.version) statsParts.push(`serge v${draft.version}`);
+    if (draft.model) statsParts.push(`model: ${draft.model}`);
+    if (draft.metrics_line) statsParts.push(draft.metrics_line);
+    draftMeta.textContent = `${draft.owner}/${draft.repo}#${draft.number} · ${statsParts.join(" · ")}`;
     summaryEl.value = draft.summary || "";
     eventEl.value = draft.event || "COMMENT";
     commentsCountEl.textContent = draft.comments.length;

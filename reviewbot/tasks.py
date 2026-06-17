@@ -24,6 +24,7 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+from . import __version__
 from .clone_cache import Checkout, CloneCache
 from .compression import MessageCompressor
 from .config import Config
@@ -405,7 +406,7 @@ def _decorate_body(cfg: Config, plan: TaskPlan, req: TaskRequest) -> str:
     )
     if cfg.is_staging:
         body += "\n\n_Note: produced by a staging deployment._"
-    footer = []
+    footer = [f"serge `v{__version__}`"]
     if plan.model:
         footer.append(f"model: `{plan.model}`")
     if plan.metrics_line:
