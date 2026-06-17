@@ -13,3 +13,6 @@ aws/.deploy-state.json
 *.egg-info/
 build/
 dist/
+*.db
+.serena/
+.jekyll-cache/
