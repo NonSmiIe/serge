@@ -16,3 +16,5 @@ dist/
 *.db
 .serena/
 .jekyll-cache/
+# Filled-in copy of deploy/helm/serge-secrets.example.yaml — never commit real secrets.
+deploy/helm/serge-secrets.yaml
