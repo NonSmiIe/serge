@@ -398,21 +398,43 @@ class CloneCache:
         ``subprocess.CalledProcessError`` if the patch does not apply
         cleanly. ``--index`` keeps the index in sync so newly added files
         show up in :meth:`collect_changes`. The patch is written to a temp
-        file (not passed on the command line) so its size is unbounded."""
+        file (not passed on the command line) so its size is unbounded.
+
+        Strict ``git apply`` requires the hunk's context *and* its ``@@``
+        line numbers to match exactly. LLM-authored diffs routinely have
+        slightly-off line numbers or whitespace, so we retry with
+        ``--recount`` (recompute line numbers from the hunk body) and
+        ``--whitespace=fix``. The retry still requires the context lines to
+        match, so it tolerates bad geometry without applying to the wrong
+        place — ``git apply --index`` is all-or-nothing, so a failed attempt
+        leaves the tree untouched for the next one."""
         with tempfile.NamedTemporaryFile(
             "w", suffix=".patch", delete=False, encoding="utf-8"
         ) as fh:
             patch_path = fh.name
             # git apply requires the diff to end with a newline.
             fh.write(diff_text if diff_text.endswith("\n") else diff_text + "\n")
+        attempts = (
+            ("strict", ["apply", "--index", "--whitespace=nowarn", patch_path]),
+            (
+                "recount",
+                ["apply", "--index", "--whitespace=fix", "--recount", patch_path],
+            ),
+        )
         try:
-            self._git(
-                checkout.path,
-                "apply",
-                "--index",
-                "--whitespace=nowarn",
-                patch_path,
-                timeout=120,
+            last_stderr = ""
+            for label, args in attempts:
+                proc = self._git(checkout.path, *args, timeout=120, check=False)
+                if proc.returncode == 0:
+                    if label != "strict":
+                        log.info(
+                            "patch applied via '%s' fallback (strict git apply failed)",
+                            label,
+                        )
+                    return
+                last_stderr = proc.stderr.decode("utf-8", errors="replace")
+            raise subprocess.CalledProcessError(
+                1, ["git", "apply"], stderr=last_stderr.encode()
             )
         finally:
             os.unlink(patch_path)

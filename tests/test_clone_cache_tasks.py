@@ -116,6 +116,42 @@ class AcquireRefTests(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             self.cache.apply_patch(co, bad)
 
+    def test_apply_patch_recount_fallback_fixes_bad_line_numbers(self):
+        # The @@ header line counts are wrong (claims 4 lines); strict
+        # `git apply` rejects this as corrupt, mirroring the off-by-some
+        # line numbers in LLM-authored diffs. The --recount fallback
+        # recomputes them from the hunk body, so the edit still applies.
+        co = self._acquire()
+        bad_geometry = (
+            "diff --git a/hello.txt b/hello.txt\n"
+            "--- a/hello.txt\n"
+            "+++ b/hello.txt\n"
+            "@@ -1,4 +1,4 @@\n"
+            "-hi from main\n"
+            "+hi patched\n"
+        )
+        # Strict apply alone fails on the bad geometry…
+        strict = self.cache._git(
+            co.path,
+            "apply",
+            "--index",
+            "--whitespace=nowarn",
+            self._patch_file(bad_geometry),
+            check=False,
+        )
+        self.assertNotEqual(strict.returncode, 0)
+        # …but apply_patch's recount fallback lands it.
+        self.cache.apply_patch(co, bad_geometry)
+        changes = {c.path: c for c in self.cache.collect_changes(co)}
+        self.assertEqual(changes["hello.txt"].content, b"hi patched\n")
+
+    def _patch_file(self, text):
+        fh = tempfile.NamedTemporaryFile("w", suffix=".patch", delete=False)
+        self.addCleanup(os.unlink, fh.name)
+        fh.write(text if text.endswith("\n") else text + "\n")
+        fh.close()
+        return fh.name
+
 
 if __name__ == "__main__":
     unittest.main()
